@@ -12,6 +12,7 @@ import { mintPropertyToken } from "@/services/blockchainService";
 import { Property } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const AdminPropertyDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +23,7 @@ const AdminPropertyDetail: React.FC = () => {
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -92,14 +94,21 @@ const AdminPropertyDetail: React.FC = () => {
     }
     
     setProcessing(true);
+    setMintError(null);
     
     try {
+      console.log("Starting token minting process for property:", property.id);
+      console.log("Minting to owner address:", property.owner);
+      console.log("Property value:", property.value);
+      
       const tokenId = await mintPropertyToken(
         signer,
         property.owner,
         property.id,
         property.value
       );
+      
+      console.log("Token minted successfully, token ID:", tokenId);
       
       // Update the property status
       const updatedProperty = await updatePropertyStatus(
@@ -112,7 +121,14 @@ const AdminPropertyDetail: React.FC = () => {
       toast.success(`Property tokenized successfully! Token ID: ${tokenId}`);
     } catch (error) {
       console.error("Error minting property token:", error);
-      toast.error("Failed to tokenize property");
+      let errorMessage = "Failed to tokenize property";
+      
+      if (error instanceof Error) {
+        errorMessage = `Tokenization failed: ${error.message}`;
+      }
+      
+      setMintError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setProcessing(false);
     }
@@ -178,6 +194,18 @@ const AdminPropertyDetail: React.FC = () => {
             </Badge>
           </div>
         </div>
+        
+        {mintError && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTitle>Error Minting Token</AlertTitle>
+            <AlertDescription>
+              {mintError}
+              <p className="mt-2 text-sm">
+                Please make sure your wallet is connected to the correct network and try again.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Property Image */}

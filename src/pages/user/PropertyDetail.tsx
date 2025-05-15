@@ -12,6 +12,7 @@ import { Property } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { mintPropertyToken } from "@/services/blockchainService";
 import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const PropertyDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +23,7 @@ const PropertyDetail: React.FC = () => {
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [minting, setMinting] = useState(false);
+  const [mintError, setMintError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProperty = async () => {
@@ -54,14 +56,21 @@ const PropertyDetail: React.FC = () => {
     }
     
     setMinting(true);
+    setMintError(null);
     
     try {
+      console.log("Starting token minting process for property:", property.id);
+      console.log("Minting to address:", account);
+      console.log("Property value:", property.value);
+      
       const tokenId = await mintPropertyToken(
         signer,
         account,
         property.id,
         property.value
       );
+      
+      console.log("Token minted successfully, token ID:", tokenId);
       
       toast.success(`Property tokenized successfully! Token ID: ${tokenId}`);
       
@@ -71,10 +80,16 @@ const PropertyDetail: React.FC = () => {
         status: "tokenized",
         tokenId
       });
-      
     } catch (error) {
       console.error("Error minting property token:", error);
-      toast.error("Failed to tokenize property");
+      let errorMessage = "Failed to tokenize property";
+      
+      if (error instanceof Error) {
+        errorMessage = `Tokenization failed: ${error.message}`;
+      }
+      
+      setMintError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setMinting(false);
     }
@@ -142,6 +157,18 @@ const PropertyDetail: React.FC = () => {
             </Badge>
           </div>
         </div>
+        
+        {mintError && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTitle>Error Minting Token</AlertTitle>
+            <AlertDescription>
+              {mintError}
+              <p className="mt-2 text-sm">
+                Please make sure your wallet is connected to the correct network and try again.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Property Image */}
