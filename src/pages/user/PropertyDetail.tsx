@@ -10,7 +10,7 @@ import { useWeb3 } from "@/contexts/Web3Context";
 import { getPropertyById } from "@/services/propertyService";
 import { Property } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { mintPropertyToken } from "@/services/blockchainService";
+import { mintPropertyToken, checkNetworkConnection, verifyContractConnection } from "@/services/blockchainService";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -18,12 +18,23 @@ const PropertyDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { account, signer, connectWallet } = useWeb3();
+  const { account, signer, provider, connectWallet } = useWeb3();
   
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [minting, setMinting] = useState(false);
   const [mintError, setMintError] = useState<string | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<{
+    checking: boolean;
+    isConnected: boolean;
+    isCorrectNetwork: boolean;
+    message: string | null;
+  }>({
+    checking: false,
+    isConnected: false,
+    isCorrectNetwork: false,
+    message: null
+  });
 
   useEffect(() => {
     const fetchProperty = async () => {
@@ -49,9 +60,67 @@ const PropertyDetail: React.FC = () => {
     fetchProperty();
   }, [id, navigate]);
 
+  const checkNetwork = async () => {
+    if (!provider) {
+      setNetworkStatus({
+        checking: false,
+        isConnected: false,
+        isCorrectNetwork: false,
+        message: "Please connect your wallet"
+      });
+      return false;
+    }
+    
+    setNetworkStatus(prev => ({ ...prev, checking: true }));
+    
+    try {
+      const result = await checkNetworkConnection(provider);
+      
+      if (!result.connected) {
+        setNetworkStatus({
+          checking: false,
+          isConnected: false,
+          isCorrectNetwork: false,
+          message: result.error || "Cannot connect to blockchain network"
+        });
+        return false;
+      }
+      
+      // For this example, we'll accept local development networks
+      const isCorrectNetwork = result.isLocalDev;
+      
+      setNetworkStatus({
+        checking: false,
+        isConnected: true,
+        isCorrectNetwork,
+        message: isCorrectNetwork 
+          ? null
+          : `Please switch to the local development network. Current network: ${result.networkName} (${result.chainId})`
+      });
+      
+      return isCorrectNetwork;
+    } catch (error) {
+      console.error("Error checking network:", error);
+      setNetworkStatus({
+        checking: false,
+        isConnected: false,
+        isCorrectNetwork: false,
+        message: "Error checking network connection"
+      });
+      return false;
+    }
+  };
+  
   const handleMintToken = async () => {
     if (!property || !signer || !account) {
       toast.error("Please connect your wallet first");
+      return;
+    }
+    
+    // Check network before proceeding
+    const networkReady = await checkNetwork();
+    if (!networkReady) {
+      toast.error(networkStatus.message || "Network connection issue");
       return;
     }
     
@@ -62,6 +131,14 @@ const PropertyDetail: React.FC = () => {
       console.log("Starting token minting process for property:", property.id);
       console.log("Minting to address:", account);
       console.log("Property value:", property.value);
+      
+      // Verify contract connection
+      const contractCheck = await verifyContractConnection(signer);
+      if (!contractCheck.connected) {
+        throw new Error(contractCheck.error || "Cannot connect to smart contracts");
+      }
+      
+      console.log("Contract connection verified:", contractCheck);
       
       const tokenId = await mintPropertyToken(
         signer,
@@ -80,6 +157,12 @@ const PropertyDetail: React.FC = () => {
         status: "tokenized",
         tokenId
       });
+      
+      // Navigate to the loans page after a short delay
+      setTimeout(() => {
+        navigate("/loans/new", { state: { tokenId, propertyId: property.id } });
+      }, 3000);
+      
     } catch (error) {
       console.error("Error minting property token:", error);
       let errorMessage = "Failed to tokenize property";
@@ -158,6 +241,15 @@ const PropertyDetail: React.FC = () => {
           </div>
         </div>
         
+        {networkStatus.message && (
+          <Alert variant="warning" className="mb-6">
+            <AlertTitle>Network Connection Issue</AlertTitle>
+            <AlertDescription>
+              {networkStatus.message}
+            </AlertDescription>
+          </Alert>
+        )}
+        
         {mintError && (
           <Alert variant="destructive" className="mb-6">
             <AlertTitle>Error Minting Token</AlertTitle>
@@ -193,9 +285,9 @@ const PropertyDetail: React.FC = () => {
                 <Button
                   onClick={handleMintToken}
                   className="w-full bg-mortgage-primary hover:bg-mortgage-accent"
-                  disabled={minting}
+                  disabled={minting || networkStatus.checking}
                 >
-                  {minting ? "Minting..." : "Mint Property Token"}
+                  {minting ? "Minting..." : networkStatus.checking ? "Checking Network..." : "Mint Property Token"}
                 </Button>
               ) : property.status === "tokenized" ? (
                 <Button 

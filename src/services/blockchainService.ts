@@ -1,4 +1,3 @@
-
 import { ethers } from "ethers";
 import PropertyTokenAbi from "../contracts/PropertyToken.json";
 import LoanContractAbi from "../contracts/LoanContract.json";
@@ -59,11 +58,13 @@ export const mintPropertyToken = async (
     console.log("Signer address:", signerAddress);
     
     // Check contract connection
-    const name = await contract.name().catch(e => {
+    try {
+      const name = await contract.name();
+      console.log("Contract name:", name);
+    } catch (e) {
       console.error("Error calling contract name:", e);
-      return "Error";
-    });
-    console.log("Contract name:", name);
+      throw new Error("Cannot connect to property token contract. Please check your network connection and contract address.");
+    }
     
     console.log("Calling mintPropertyToken...");
     const tx = await contract.mintPropertyToken(to, propertyId, valueInWei);
@@ -73,32 +74,133 @@ export const mintPropertyToken = async (
     const receipt = await tx.wait();
     console.log("Transaction confirmed:", receipt);
     
-    // Find the PropertyTokenized event
-    const event = receipt.logs
-      .map((log: any) => {
-        try {
-          return contract.interface.parseLog({
-            topics: log.topics,
-            data: log.data
-          });
-        } catch (e) {
-          console.error("Error parsing log:", e);
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .find((event: any) => event.name === "PropertyTokenized");
-
-    if (!event) {
-      console.error("PropertyTokenized event not found in logs");
-      console.log("All events:", receipt.logs);
-      throw new Error("Property tokenization failed - event not found");
-    }
-
-    console.log("Found PropertyTokenized event:", event);
+    // Improved event parsing logic
+    console.log("Parsing transaction logs...");
     
-    // Return the tokenId
-    return event.args.tokenId.toString();
+    // First, try to find the event directly
+    let tokenId = null;
+    
+    // Method 1: Try direct event parsing
+    try {
+      const event = receipt.logs
+        .map((log: any) => {
+          try {
+            return contract.interface.parseLog({
+              topics: log.topics,
+              data: log.data
+            });
+          } catch (e) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .find((event: any) => event.name === "PropertyTokenized");
+        
+      if (event) {
+        console.log("Found PropertyTokenized event:", event);
+        tokenId = event.args.tokenId.toString();
+        console.log("Token ID from event:", tokenId);
+      }
+    } catch (error) {
+      console.error("Error in direct event parsing:", error);
+    }
+    
+    // Method 2: If event parsing failed, try alternative approach - get token balance and latest token
+    if (!tokenId) {
+      console.log("Direct event parsing failed, trying alternative method...");
+      try {
+        const balance = await contract.balanceOf(to);
+        console.log("Current token balance:", balance.toString());
+        
+        if (balance > 0) {
+          // Get the latest token ID owned by this address
+          const index = balance - 1n;
+          tokenId = await contract.tokenOfOwnerByIndex(to, index);
+          console.log("Latest token ID from balance:", tokenId.toString());
+          
+          // Verify this token has the right property ID
+          const propertyInfo = await contract.getTokenProperty(tokenId);
+          console.log("Property info for token:", propertyInfo);
+          
+          if (propertyInfo && propertyInfo.propertyId === propertyId) {
+            console.log("Token confirmed to match property ID:", propertyId);
+            tokenId = tokenId.toString();
+          } else {
+            console.warn("Latest token doesn't match property ID, searching all tokens...");
+            
+            // If the latest token doesn't match, search through all tokens
+            for (let i = 0; i < balance; i++) {
+              const curTokenId = await contract.tokenOfOwnerByIndex(to, i);
+              const curPropertyInfo = await contract.getTokenProperty(curTokenId);
+              
+              if (curPropertyInfo && curPropertyInfo.propertyId === propertyId) {
+                tokenId = curTokenId.toString();
+                console.log("Found matching token ID:", tokenId);
+                break;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error in alternative token ID retrieval:", error);
+      }
+    }
+    
+    // Method 3: Last resort - check for Transfer events
+    if (!tokenId) {
+      console.log("Trying to find Transfer event...");
+      try {
+        const transferEvent = receipt.logs
+          .map((log: any) => {
+            try {
+              return contract.interface.parseLog({
+                topics: log.topics,
+                data: log.data
+              });
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter(Boolean)
+          .find((event: any) => event.name === "Transfer" && event.args.to.toLowerCase() === to.toLowerCase());
+          
+        if (transferEvent) {
+          console.log("Found Transfer event:", transferEvent);
+          tokenId = transferEvent.args.tokenId.toString();
+          console.log("Token ID from Transfer event:", tokenId);
+        }
+      } catch (error) {
+        console.error("Error parsing Transfer events:", error);
+      }
+    }
+    
+    // If still no token ID, check raw logs and topics
+    if (!tokenId) {
+      console.log("Analyzing raw logs as last resort...");
+      console.log("Raw logs:", JSON.stringify(receipt.logs, null, 2));
+      
+      // Manually try to extract token ID from raw logs
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() === PROPERTY_TOKEN_ADDRESS.toLowerCase()) {
+          console.log("Found log from token contract:", log);
+          // Assuming the token ID might be in the last topic for Transfer events (common ERC721 pattern)
+          if (log.topics.length >= 4) {
+            const potentialTokenId = ethers.toBigInt(log.topics[3]);
+            console.log("Potential token ID from raw topic:", potentialTokenId.toString());
+            tokenId = potentialTokenId.toString();
+            break;
+          }
+        }
+      }
+    }
+    
+    if (!tokenId) {
+      throw new Error("Could not determine token ID from transaction receipt. Please check the contract events or try again.");
+    }
+    
+    console.log("Final token ID:", tokenId);
+    return tokenId;
+    
   } catch (error) {
     console.error("Error minting property token:", error);
     
@@ -143,6 +245,19 @@ export const createLoan = async (
     console.log("Collateral in Wei:", collateralInWei.toString());
     console.log("Interest rate for contract:", interestRateForContract);
     
+    // First make sure the token is approved for the loan contract
+    const propertyContract = await getPropertyTokenContract(signer);
+    const isApproved = await propertyContract.getApproved(tokenId);
+    console.log("Current approval for token:", isApproved);
+    
+    if (isApproved.toLowerCase() !== LOAN_CONTRACT_ADDRESS.toLowerCase()) {
+      console.log("Approving token for loan contract...");
+      const approveTx = await propertyContract.approve(LOAN_CONTRACT_ADDRESS, tokenId);
+      console.log("Approval transaction hash:", approveTx.hash);
+      await approveTx.wait();
+      console.log("Token approved for loan contract");
+    }
+    
     const tx = await contract.createLoan(
       tokenId,
       loanAmountInWei,
@@ -157,32 +272,57 @@ export const createLoan = async (
     const receipt = await tx.wait();
     console.log("Transaction confirmed:", receipt);
     
-    // Find the LoanCreated event
-    const event = receipt.logs
-      .map((log: any) => {
-        try {
-          return contract.interface.parseLog({
-            topics: log.topics,
-            data: log.data
-          });
-        } catch (e) {
-          console.error("Error parsing log:", e);
-          return null;
-        }
-      })
-      .filter(Boolean)
-      .find((event: any) => event.name === "LoanCreated");
-
-    if (!event) {
-      console.error("LoanCreated event not found in logs");
-      console.log("All events:", receipt.logs);
-      throw new Error("Loan creation failed - event not found");
-    }
-
-    console.log("Found LoanCreated event:", event);
+    // Improved event parsing for loan creation
+    let loanId = null;
     
-    // Return the loanId
-    return event.args.loanId.toString();
+    // Try direct event parsing
+    try {
+      const event = receipt.logs
+        .map((log: any) => {
+          try {
+            return contract.interface.parseLog({
+              topics: log.topics,
+              data: log.data
+            });
+          } catch (e) {
+            console.error("Error parsing log:", e);
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .find((event: any) => event.name === "LoanCreated");
+
+      if (event) {
+        console.log("Found LoanCreated event:", event);
+        loanId = event.args.loanId.toString();
+        console.log("Loan ID from event:", loanId);
+      }
+    } catch (error) {
+      console.error("Error in direct event parsing:", error);
+    }
+    
+    // If event parsing failed, try to get latest loan
+    if (!loanId) {
+      console.log("Direct event parsing failed, trying alternative method...");
+      try {
+        const borrowerAddress = await signer.getAddress();
+        const loans = await contract.getLoansByBorrower(borrowerAddress);
+        
+        if (loans && loans.length > 0) {
+          // Get the latest loan ID
+          loanId = loans[loans.length - 1].toString();
+          console.log("Latest loan ID:", loanId);
+        }
+      } catch (error) {
+        console.error("Error getting loans by borrower:", error);
+      }
+    }
+    
+    if (!loanId) {
+      throw new Error("Could not determine loan ID from transaction receipt. Please check your loans dashboard.");
+    }
+    
+    return loanId;
   } catch (error) {
     console.error("Error creating loan:", error);
     
@@ -344,5 +484,66 @@ export const getTokenizedProperties = async (
     }
     
     return [];
+  }
+};
+
+// Add a utility function to check network connection
+export const checkNetworkConnection = async (provider: ethers.BrowserProvider) => {
+  try {
+    const network = await provider.getNetwork();
+    const chainId = Number(network.chainId);
+    
+    console.log("Connected to chain ID:", chainId);
+    
+    // For local development (Ganache default)
+    const isLocalDev = chainId === 1337 || chainId === 31337;
+    
+    if (!isLocalDev) {
+      console.warn("Not connected to local development network!");
+      return {
+        connected: true,
+        isLocalDev: false,
+        chainId,
+        networkName: network.name
+      };
+    }
+    
+    return {
+      connected: true,
+      isLocalDev: true,
+      chainId,
+      networkName: "Local Development"
+    };
+  } catch (error) {
+    console.error("Error checking network connection:", error);
+    return {
+      connected: false,
+      error: "Cannot connect to blockchain network"
+    };
+  }
+};
+
+// Add a utility function to verify contract connection
+export const verifyContractConnection = async (signer: ethers.JsonRpcSigner) => {
+  try {
+    // Check Property Token contract
+    const propertyContract = await getPropertyTokenContract(signer);
+    const propertyName = await propertyContract.name();
+    
+    // Check Loan contract
+    const loanContract = await getLoanContract(signer);
+    const owner = await loanContract.owner();
+    
+    return {
+      connected: true,
+      propertyContractName: propertyName,
+      loanContractOwner: owner
+    };
+  } catch (error) {
+    console.error("Error verifying contract connection:", error);
+    return {
+      connected: false,
+      error: "Cannot connect to smart contracts. Please check your network connection and contract addresses."
+    };
   }
 };

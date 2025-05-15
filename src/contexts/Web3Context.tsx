@@ -54,6 +54,11 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUserAddress(accounts[0]);
         
         toast.success("Wallet connected successfully!");
+        
+        // Log connection details for debugging
+        console.log("Connected to account:", accounts[0]);
+        console.log("Chain ID:", Number(network.chainId));
+        console.log("Network name:", network.name);
       }
     } catch (error) {
       console.error("Error connecting wallet:", error);
