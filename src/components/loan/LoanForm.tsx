@@ -203,7 +203,7 @@ const LoanForm: React.FC = () => {
             {selectedProperty && (
               <>
                 {borrowedAmount > 0 && (
-                  <Alert variant="warning" className="bg-yellow-50 border-yellow-300">
+                  <Alert variant="default" className="bg-yellow-50 border-yellow-300">
                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                     <AlertDescription className="text-yellow-800">
                       You have already borrowed {formatCurrency(borrowedAmount)} against this property.
