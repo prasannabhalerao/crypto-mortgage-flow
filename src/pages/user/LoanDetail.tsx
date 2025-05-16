@@ -11,9 +11,8 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useWeb3 } from "@/contexts/Web3Context";
 import { toast } from "sonner";
-import { getLoanById } from "@/services/loanService";
+import { getLoanById, updateLoanStatus } from "@/services/loanService";
 import { Loan } from "@/types";
-import { repayLoan } from "@/services/blockchainService";
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -35,7 +34,7 @@ const LoanDetail: React.FC = () => {
   const navigate = useNavigate();
   
   const [processing, setProcessing] = useState(false);
-  const { signer, account } = useWeb3();
+  const { signer, account, simpleRepayLoan } = useWeb3();
 
   const {
     data: loan,
@@ -47,6 +46,23 @@ const LoanDetail: React.FC = () => {
     queryFn: () => id ? getLoanById(id) : Promise.reject("No loan ID provided"),
     enabled: !!id,
   });
+
+  // To track loan payments from localStorage
+  const [paidPayments, setPaidPayments] = useState<Array<{date: string, amount: number}>>([]);
+  
+  // Load payment history from localStorage
+  useEffect(() => {
+    if (id) {
+      try {
+        const paymentsJSON = localStorage.getItem('loanPayments');
+        const payments = paymentsJSON ? JSON.parse(paymentsJSON) : {};
+        const loanPayments = payments[id] || [];
+        setPaidPayments(loanPayments);
+      } catch (error) {
+        console.error("Error loading loan payments from localStorage:", error);
+      }
+    }
+  }, [id]);
 
   if (isLoading) {
     return (
@@ -84,20 +100,25 @@ const LoanDetail: React.FC = () => {
   const daysElapsed = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
   const progressPercentage = Math.min(Math.max((daysElapsed / totalDays) * 100, 0), 100);
   
-  // Generate sample repayment schedule
+  // Generate sample repayment schedule, mark as paid based on localStorage data
   const generateRepaymentSchedule = () => {
     const schedule: { date: Date; amount: number; status: "pending" | "paid" | "overdue" }[] = [];
     const monthlyPayment = loan.amount * (1 + loan.interestRate / 100) / loan.term;
+    
+    // Check for payments made in localStorage
+    const totalPaidAmount = paidPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const paidMonths = Math.floor(totalPaidAmount / monthlyPayment);
     
     for (let i = 0; i < loan.term; i++) {
       const paymentDate = new Date(startDate);
       paymentDate.setMonth(paymentDate.getMonth() + i + 1);
       
       let status: "pending" | "paid" | "overdue";
-      if (paymentDate < today) {
+      // Mark as paid if it's within the number of months paid
+      if (i < paidMonths) {
         status = "paid";
-      } else if (paymentDate.getMonth() === today.getMonth() && paymentDate.getFullYear() === today.getFullYear()) {
-        status = "pending";
+      } else if (paymentDate < today) {
+        status = "overdue";
       } else {
         status = "pending";
       }
@@ -123,17 +144,33 @@ const LoanDetail: React.FC = () => {
     setProcessing(true);
     
     try {
-      // For a real app, we'd get the actual amount due here
+      // Get the current month's payment
       const currentMonth = today.getMonth() - startDate.getMonth() + 
         (12 * (today.getFullYear() - startDate.getFullYear()));
       
       if (currentMonth >= 0 && currentMonth < repaymentSchedule.length) {
         const amountDue = repaymentSchedule[currentMonth].amount;
         
-        await repayLoan(signer, loan.id, amountDue);
+        // Use our simplified repayment function
+        await simpleRepayLoan(loan.id, amountDue);
+        
+        // Check if this was the final payment
+        const totalPaid = paidPayments.reduce((total, payment) => total + payment.amount, 0) + amountDue;
+        const totalDue = loan.amount * (1 + loan.interestRate / 100);
+        
+        if (totalPaid >= totalDue) {
+          // If fully paid, update loan status
+          await updateLoanStatus(loan.id, "repaid");
+        }
+        
+        // Update UI with new payment
+        const newPayments = [...paidPayments, { date: new Date().toISOString(), amount: amountDue }];
+        setPaidPayments(newPayments);
+        
+        // Refetch loan data
+        refetch();
         
         toast.success("Payment successful!");
-        refetch();
       }
     } catch (error) {
       console.error("Payment failed:", error);

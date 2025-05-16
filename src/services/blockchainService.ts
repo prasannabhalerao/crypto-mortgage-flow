@@ -215,6 +215,27 @@ export const mintPropertyToken = async (
   }
 };
 
+// Function to update property loan tracking
+export const trackPropertyLoanInLocalStorage = (propertyId: string, amount: number) => {
+  try {
+    // Get existing property loans
+    const propertyLoansJSON = localStorage.getItem('propertyLoans');
+    const propertyLoans = propertyLoansJSON ? JSON.parse(propertyLoansJSON) : {};
+    
+    // Update for this property
+    propertyLoans[propertyId] = (propertyLoans[propertyId] || 0) + amount;
+    
+    // Save back to localStorage
+    localStorage.setItem('propertyLoans', JSON.stringify(propertyLoans));
+    
+    console.log(`Updated loan amount for property ${propertyId}: ${propertyLoans[propertyId]}`);
+    return true;
+  } catch (error) {
+    console.error("Error updating property loan tracking:", error);
+    return false;
+  }
+};
+
 // Create a loan
 export const createLoan = async (
   signer: ethers.JsonRpcSigner,

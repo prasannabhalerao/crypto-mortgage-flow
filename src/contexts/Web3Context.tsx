@@ -13,6 +13,7 @@ interface Web3ContextType {
   disconnect: () => void;
   isConnected: boolean;
   simpleMintToken: (propertyId: string, value: number, toAddress: string) => Promise<string>;
+  simpleRepayLoan: (loanId: string, amount: number) => Promise<boolean>;
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
@@ -119,6 +120,87 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Simplified loan repayment function
+  const simpleRepayLoan = async (loanId: string, amount: number): Promise<boolean> => {
+    try {
+      if (!signer) {
+        throw new Error("No wallet connected");
+      }
+      
+      console.log(`Starting simplified loan repayment for loan ${loanId}`);
+      console.log(`Repayment amount: ${amount}`);
+      
+      // Get the sender address
+      const fromAddress = await signer.getAddress();
+      
+      // Generate a recipient address (this would be the loan contract in a real application)
+      const toAddress = "0x000000000000000000000000000000000000dEaD"; // Burn address as placeholder
+      
+      // Calculate the ETH value (simulating the payment amount)
+      // In a real app, this would be the actual payment amount converted to ETH
+      // Here we use a small amount just to trigger MetaMask
+      const ethValue = "0.00001"; // Very small amount for testing
+      
+      console.log(`Sending transaction from ${fromAddress} to ${toAddress}`);
+      console.log(`Transaction value: ${ethValue} ETH`);
+      
+      // Create and send the transaction
+      const tx = await signer.sendTransaction({
+        to: toAddress,
+        value: ethers.parseUnits(ethValue, "ether")
+      });
+      
+      console.log("Transaction sent:", tx.hash);
+      
+      // Wait for the transaction to be confirmed
+      const receipt = await tx.wait();
+      console.log("Transaction confirmed:", receipt);
+      
+      // Update the loan payments in localStorage to track this payment
+      updateLoanPaymentInLocalStorage(loanId, amount);
+      
+      toast.success("Loan payment successful!");
+      return true;
+    } catch (error) {
+      console.error("Error in loan repayment:", error);
+      let errorMessage = "Payment failed";
+      
+      if (error instanceof Error) {
+        errorMessage = `Payment failed - ${error.message}`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+  };
+  
+  // Helper function to update loan payment in localStorage
+  const updateLoanPaymentInLocalStorage = (loanId: string, amount: number) => {
+    try {
+      // Get existing loan payments
+      const paymentsJSON = localStorage.getItem('loanPayments');
+      const payments = paymentsJSON ? JSON.parse(paymentsJSON) : {};
+      
+      // Get existing payment history for this loan
+      const loanPayments = payments[loanId] || [];
+      
+      // Add new payment
+      loanPayments.push({
+        date: new Date().toISOString(),
+        amount: amount
+      });
+      
+      // Update for this loan
+      payments[loanId] = loanPayments;
+      
+      // Save back to localStorage
+      localStorage.setItem('loanPayments', JSON.stringify(payments));
+      
+      console.log(`Payment of ${amount} recorded for loan ${loanId}`);
+    } catch (error) {
+      console.error("Error updating loan payment in localStorage:", error);
+    }
+  };
+
   // Listen for account changes
   useEffect(() => {
     if (window.ethereum) {
@@ -154,7 +236,8 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
         connectWallet,
         disconnect,
         isConnected: !!account,
-        simpleMintToken
+        simpleMintToken,
+        simpleRepayLoan
       }}
     >
       {children}
