@@ -5,20 +5,19 @@ import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWeb3 } from "@/contexts/Web3Context";
 import { getPropertyById, updatePropertyStatus } from "@/services/propertyService";
-import { mintPropertyToken, checkNetworkConnection, verifyContractConnection } from "@/services/blockchainService";
 import { Property } from "@/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const AdminPropertyDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
-  const { account, signer, provider, connectWallet } = useWeb3();
+  const { account, connectWallet, simpleMintToken } = useWeb3();
   
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,13 +25,9 @@ const AdminPropertyDetail: React.FC = () => {
   const [mintError, setMintError] = useState<string | null>(null);
   const [networkStatus, setNetworkStatus] = useState<{
     checking: boolean;
-    isConnected: boolean;
-    isCorrectNetwork: boolean;
     message: string | null;
   }>({
     checking: false,
-    isConnected: false,
-    isCorrectNetwork: false,
     message: null
   });
 
@@ -65,57 +60,6 @@ const AdminPropertyDetail: React.FC = () => {
     
     fetchProperty();
   }, [id, isAdmin, navigate]);
-
-  const checkNetwork = async () => {
-    if (!provider) {
-      setNetworkStatus({
-        checking: false,
-        isConnected: false,
-        isCorrectNetwork: false,
-        message: "Please connect your wallet"
-      });
-      return false;
-    }
-    
-    setNetworkStatus(prev => ({ ...prev, checking: true }));
-    
-    try {
-      const result = await checkNetworkConnection(provider);
-      
-      if (!result.connected) {
-        setNetworkStatus({
-          checking: false,
-          isConnected: false,
-          isCorrectNetwork: false,
-          message: result.error || "Cannot connect to blockchain network"
-        });
-        return false;
-      }
-      
-      // For this example, we'll accept local development networks
-      const isCorrectNetwork = result.isLocalDev;
-      
-      setNetworkStatus({
-        checking: false,
-        isConnected: true,
-        isCorrectNetwork,
-        message: isCorrectNetwork 
-          ? null
-          : `Please switch to the local development network. Current network: ${result.networkName} (${result.chainId})`
-      });
-      
-      return isCorrectNetwork;
-    } catch (error) {
-      console.error("Error checking network:", error);
-      setNetworkStatus({
-        checking: false,
-        isConnected: false,
-        isCorrectNetwork: false,
-        message: "Error checking network connection"
-      });
-      return false;
-    }
-  };
 
   const handleApprove = async () => {
     if (!property) return;
@@ -150,15 +94,8 @@ const AdminPropertyDetail: React.FC = () => {
   };
 
   const handleMintToken = async () => {
-    if (!property || !signer || !account) {
+    if (!property || !account) {
       toast.error("Please connect your wallet first");
-      return;
-    }
-    
-    // Check network before proceeding
-    const networkReady = await checkNetwork();
-    if (!networkReady) {
-      toast.error(networkStatus.message || "Network connection issue");
       return;
     }
     
@@ -166,23 +103,14 @@ const AdminPropertyDetail: React.FC = () => {
     setMintError(null);
     
     try {
-      console.log("Starting token minting process for property:", property.id);
-      console.log("Minting to owner address:", property.owner);
-      console.log("Property value:", property.value);
+      console.log("Starting simplified token minting process for property:", property.id);
+      console.log("Owner address:", property.owner);
       
-      // Verify contract connection
-      const contractCheck = await verifyContractConnection(signer);
-      if (!contractCheck.connected) {
-        throw new Error(contractCheck.error || "Cannot connect to smart contracts");
-      }
-      
-      console.log("Contract connection verified:", contractCheck);
-      
-      const tokenId = await mintPropertyToken(
-        signer,
-        property.owner,
+      // Use our simplified minting function
+      const tokenId = await simpleMintToken(
         property.id,
-        property.value
+        property.value,
+        property.owner
       );
       
       console.log("Token minted successfully, token ID:", tokenId);
@@ -201,7 +129,7 @@ const AdminPropertyDetail: React.FC = () => {
       let errorMessage = "Failed to tokenize property";
       
       if (error instanceof Error) {
-        errorMessage = `Tokenization failed: ${error.message}`;
+        errorMessage = error.message;
       }
       
       setMintError(errorMessage);
@@ -273,7 +201,7 @@ const AdminPropertyDetail: React.FC = () => {
         </div>
         
         {networkStatus.message && (
-          <Alert variant="warning" className="mb-6">
+          <Alert className="mb-6">
             <AlertTitle>Network Connection Issue</AlertTitle>
             <AlertDescription>
               {networkStatus.message}
@@ -338,9 +266,9 @@ const AdminPropertyDetail: React.FC = () => {
                     <Button
                       onClick={handleMintToken}
                       className="w-full bg-mortgage-primary hover:bg-mortgage-accent"
-                      disabled={processing || networkStatus.checking}
+                      disabled={processing}
                     >
-                      {processing ? "Minting..." : networkStatus.checking ? "Checking Network..." : "Mint Property Token"}
+                      {processing ? "Minting..." : "Mint Property Token"}
                     </Button>
                   )}
                 </>
