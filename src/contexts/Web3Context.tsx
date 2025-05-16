@@ -13,6 +13,7 @@ interface Web3ContextType {
   disconnect: () => void;
   isConnected: boolean;
   simpleMintToken: (propertyId: string, value: number, toAddress: string) => Promise<string>;
+  getBorrowedAmount: (propertyId: string) => Promise<number>;
 }
 
 const Web3Context = createContext<Web3ContextType | undefined>(undefined);
@@ -22,6 +23,7 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
   const [account, setAccount] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
+  const [borrowedAmounts, setBorrowedAmounts] = useState<Record<string, number>>({});
   const { updateUserAddress } = useAuth();
 
   // Check if MetaMask is installed
@@ -76,6 +78,37 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     updateUserAddress("");
     toast.info("Wallet disconnected");
   };
+
+  // Track borrowed amounts for properties
+  const updateBorrowedAmount = (propertyId: string, amount: number) => {
+    setBorrowedAmounts(prev => ({
+      ...prev,
+      [propertyId]: (prev[propertyId] || 0) + amount
+    }));
+    
+    // Store in localStorage for persistence across sessions
+    const storedAmounts = JSON.parse(localStorage.getItem('borrowedAmounts') || '{}');
+    storedAmounts[propertyId] = (storedAmounts[propertyId] || 0) + amount;
+    localStorage.setItem('borrowedAmounts', JSON.stringify(storedAmounts));
+  };
+
+  // Get borrowed amount for a property
+  const getBorrowedAmount = async (propertyId: string): Promise<number> => {
+    // First check local state
+    if (borrowedAmounts[propertyId]) {
+      return borrowedAmounts[propertyId];
+    }
+    
+    // Then check localStorage for persistence across sessions
+    const storedAmounts = JSON.parse(localStorage.getItem('borrowedAmounts') || '{}');
+    return storedAmounts[propertyId] || 0;
+  };
+
+  // Load borrowed amounts from localStorage on component mount
+  useEffect(() => {
+    const storedAmounts = JSON.parse(localStorage.getItem('borrowedAmounts') || '{}');
+    setBorrowedAmounts(storedAmounts);
+  }, []);
 
   // Simplified minting function that doesn't rely on complex contract interactions
   const simpleMintToken = async (propertyId: string, value: number, toAddress: string): Promise<string> => {
@@ -154,7 +187,8 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
         connectWallet,
         disconnect,
         isConnected: !!account,
-        simpleMintToken
+        simpleMintToken,
+        getBorrowedAmount
       }}
     >
       {children}

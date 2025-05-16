@@ -6,21 +6,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 import { Property, Loan } from "@/types";
 import { getPropertiesByOwner } from "@/services/propertyService";
-import { createLoanRequest } from "@/services/loanService";
+import { createLoanRequest, getBorrowedAmountByProperty } from "@/services/loanService";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWeb3 } from "@/contexts/Web3Context";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 
 const LoanForm: React.FC = () => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { getBorrowedAmount } = useWeb3();
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [borrowedAmount, setBorrowedAmount] = useState(0);
+  const [maxLoanAmount, setMaxLoanAmount] = useState(0);
+  const [error, setError] = useState("");
   
   const [formData, setFormData] = useState({
     propertyId: "",
@@ -53,19 +60,51 @@ const LoanForm: React.FC = () => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Reset error when amount changes
+    if (name === "amount") {
+      setError("");
+    }
   };
 
-  const handlePropertySelect = (value: string) => {
+  const handlePropertySelect = async (value: string) => {
     setFormData(prev => ({ ...prev, propertyId: value }));
     
     const property = properties.find(p => p.id === value);
     setSelectedProperty(property || null);
     
-    // Auto-suggest a loan amount (70% of property value)
     if (property) {
-      const suggestedAmount = (property.value * 0.7).toString();
-      setFormData(prev => ({ ...prev, amount: suggestedAmount }));
+      try {
+        // Get previously borrowed amount for this property
+        const borrowed = await getBorrowedAmountByProperty(property.id);
+        setBorrowedAmount(borrowed);
+        
+        // Calculate maximum available loan amount (80% of value minus already borrowed)
+        const maxAvailable = Math.max(0, property.value * 0.8 - borrowed);
+        setMaxLoanAmount(maxAvailable);
+        
+        // Auto-suggest a loan amount (available equity or 70% of property value, whichever is less)
+        const suggestedAmount = Math.min(maxAvailable, property.value * 0.7).toString();
+        setFormData(prev => ({ ...prev, amount: suggestedAmount }));
+      } catch (error) {
+        console.error("Error getting borrowed amount:", error);
+        toast.error("Error calculating available equity");
+      }
     }
+  };
+
+  const validateLoanAmount = (): boolean => {
+    if (!selectedProperty) return false;
+    
+    const requestedAmount = parseFloat(formData.amount);
+    
+    // Check if requested amount exceeds maximum available equity
+    if (requestedAmount > maxLoanAmount) {
+      setError(`The requested loan amount exceeds your available equity. Maximum loan amount: ${formatCurrency(maxLoanAmount)}`);
+      return false;
+    }
+    
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -73,6 +112,11 @@ const LoanForm: React.FC = () => {
     
     if (!selectedProperty || !selectedProperty.tokenId) {
       toast.error("Please select a tokenized property");
+      return;
+    }
+    
+    // Validate loan amount
+    if (!validateLoanAmount()) {
       return;
     }
     
@@ -158,6 +202,23 @@ const LoanForm: React.FC = () => {
             
             {selectedProperty && (
               <>
+                {borrowedAmount > 0 && (
+                  <Alert variant="warning" className="bg-yellow-50 border-yellow-300">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800">
+                      You have already borrowed {formatCurrency(borrowedAmount)} against this property.
+                      Available equity: {formatCurrency(maxLoanAmount)}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+                
                 <div className="grid gap-2">
                   <Label htmlFor="amount">Loan Amount (USD)</Label>
                   <Input
@@ -167,12 +228,13 @@ const LoanForm: React.FC = () => {
                     value={formData.amount}
                     onChange={handleChange}
                     min={1}
-                    max={selectedProperty.value * 0.8}
+                    max={maxLoanAmount}
                     step="0.01"
                     required
                   />
                   <p className="text-xs text-gray-500">
-                    Maximum loan amount: {formatCurrency(selectedProperty.value * 0.8)} (80% of property value)
+                    Maximum loan amount: {formatCurrency(maxLoanAmount)}
+                    {borrowedAmount > 0 && ` (After accounting for existing loans)`}
                   </p>
                 </div>
                 
@@ -263,7 +325,7 @@ const LoanForm: React.FC = () => {
                   <Button
                     type="submit"
                     className="bg-mortgage-primary hover:bg-mortgage-accent"
-                    disabled={submitting}
+                    disabled={submitting || parseFloat(formData.amount) > maxLoanAmount}
                   >
                     {submitting ? "Submitting..." : "Request Loan"}
                   </Button>
