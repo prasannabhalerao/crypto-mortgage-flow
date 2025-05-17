@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Web3Provider } from "@/contexts/Web3Context";
+import { useEffect } from "react";
+import { migrateAllMockData } from "./services/migrationService";
 
 import Index from "./pages/Index";
 import Login from "./pages/Login";

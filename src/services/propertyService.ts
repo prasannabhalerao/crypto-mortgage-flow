@@ -16,9 +16,16 @@ export const getAllProperties = async (): Promise<Property[]> => {
     if (error) throw error;
     
     return data.map(p => ({
-      ...p,
-      createdAt: new Date(p.created_at),
-      value: Number(p.value) // Convert from NUMERIC to number
+      id: p.id,
+      owner: p.owner,
+      title: p.title,
+      description: p.description,
+      location: p.location,
+      value: Number(p.value),
+      imageUrl: p.image_url,
+      status: p.status,
+      tokenId: p.token_id,
+      createdAt: new Date(p.created_at)
     })) as Property[];
   } catch (error) {
     console.error("Error fetching properties from Supabase:", error);
@@ -42,9 +49,16 @@ export const getPropertiesByOwner = async (ownerAddress: string): Promise<Proper
     if (error) throw error;
     
     return data.map(p => ({
-      ...p,
-      createdAt: new Date(p.created_at),
-      value: Number(p.value)
+      id: p.id,
+      owner: p.owner,
+      title: p.title,
+      description: p.description,
+      location: p.location,
+      value: Number(p.value),
+      imageUrl: p.image_url,
+      status: p.status,
+      tokenId: p.token_id,
+      createdAt: new Date(p.created_at)
     })) as Property[];
   } catch (error) {
     console.error("Error fetching properties by owner from Supabase:", error);
@@ -76,9 +90,16 @@ export const getPropertiesByStatus = async (status: Property["status"]): Promise
     if (error) throw error;
     
     return data.map(p => ({
-      ...p,
-      createdAt: new Date(p.created_at),
-      value: Number(p.value)
+      id: p.id,
+      owner: p.owner,
+      title: p.title,
+      description: p.description,
+      location: p.location,
+      value: Number(p.value),
+      imageUrl: p.image_url,
+      status: p.status,
+      tokenId: p.token_id,
+      createdAt: new Date(p.created_at)
     })) as Property[];
   } catch (error) {
     console.error("Error fetching properties by status from Supabase:", error);
@@ -101,9 +122,16 @@ export const getPropertyById = async (id: string): Promise<Property | undefined>
     if (error) throw error;
     
     return {
-      ...data,
-      createdAt: new Date(data.created_at),
-      value: Number(data.value)
+      id: data.id,
+      owner: data.owner,
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      value: Number(data.value),
+      imageUrl: data.image_url,
+      status: data.status,
+      tokenId: data.token_id,
+      createdAt: new Date(data.created_at)
     } as Property;
   } catch (error) {
     console.error("Error fetching property by ID from Supabase:", error);
@@ -136,10 +164,16 @@ export const addProperty = async (property: Omit<Property, "id" | "createdAt" | 
     if (error) throw error;
     
     return {
-      ...data,
+      id: data.id,
+      owner: data.owner,
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      value: Number(data.value),
       imageUrl: data.image_url,
-      createdAt: new Date(data.created_at),
-      value: Number(data.value)
+      status: data.status,
+      tokenId: data.token_id,
+      createdAt: new Date(data.created_at)
     } as Property;
   } catch (error) {
     console.error("Error adding property to Supabase:", error);
@@ -175,10 +209,16 @@ export const updatePropertyStatus = async (id: string, status: Property["status"
     if (error) throw error;
     
     return {
-      ...data,
+      id: data.id,
+      owner: data.owner,
+      title: data.title,
+      description: data.description,
+      location: data.location,
+      value: Number(data.value),
       imageUrl: data.image_url,
-      createdAt: new Date(data.created_at),
-      value: Number(data.value)
+      status: data.status,
+      tokenId: data.token_id,
+      createdAt: new Date(data.created_at)
     } as Property;
   } catch (error) {
     console.error("Error updating property status in Supabase:", error);
