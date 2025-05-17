@@ -1,83 +1,248 @@
 
+import { supabase } from "../integrations/supabase/client";
 import { Property } from "../types";
 import { mockProperties } from "./mockData";
 
-// Create a mutable copy of mockProperties for our mock service
+// Create a local backup of mockProperties (will be migrated to Supabase)
 let properties: Property[] = [...mockProperties];
 
 // Get all properties
 export const getAllProperties = async (): Promise<Property[]> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return [...properties];
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*');
+    
+    if (error) throw error;
+    
+    return data.map(p => ({
+      ...p,
+      createdAt: new Date(p.created_at),
+      value: Number(p.value) // Convert from NUMERIC to number
+    })) as Property[];
+  } catch (error) {
+    console.error("Error fetching properties from Supabase:", error);
+    
+    // Fallback to mock data if Supabase fails
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return [...properties];
+  }
 };
 
 // Get properties by owner address
 export const getPropertiesByOwner = async (ownerAddress: string): Promise<Property[]> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return properties.filter(property => property.owner.toLowerCase() === ownerAddress.toLowerCase());
+  if (!ownerAddress) return [];
+  
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('owner', ownerAddress.toLowerCase());
+    
+    if (error) throw error;
+    
+    return data.map(p => ({
+      ...p,
+      createdAt: new Date(p.created_at),
+      value: Number(p.value)
+    })) as Property[];
+  } catch (error) {
+    console.error("Error fetching properties by owner from Supabase:", error);
+    
+    // Fallback to mock data
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return properties.filter(property => 
+      property.owner.toLowerCase() === ownerAddress.toLowerCase()
+    );
+  }
 };
 
 // Get user properties (by user ID)
 export const getUserProperties = async (userId: string): Promise<Property[]> => {
-  // For now, we'll use getPropertiesByOwner since we're using wallet addresses as IDs
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return properties.filter(property => property.owner.toLowerCase() === userId.toLowerCase());
+  if (!userId) return [];
+  
+  // For now, we're using wallet addresses as user IDs
+  return getPropertiesByOwner(userId);
 };
 
 // Get properties by status (for admin dashboard)
 export const getPropertiesByStatus = async (status: Property["status"]): Promise<Property[]> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return properties.filter(property => property.status === status);
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('status', status);
+    
+    if (error) throw error;
+    
+    return data.map(p => ({
+      ...p,
+      createdAt: new Date(p.created_at),
+      value: Number(p.value)
+    })) as Property[];
+  } catch (error) {
+    console.error("Error fetching properties by status from Supabase:", error);
+    
+    // Fallback to mock data
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return properties.filter(property => property.status === status);
+  }
 };
 
 // Get property by ID
 export const getPropertyById = async (id: string): Promise<Property | undefined> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return properties.find(property => property.id === id);
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    
+    return {
+      ...data,
+      createdAt: new Date(data.created_at),
+      value: Number(data.value)
+    } as Property;
+  } catch (error) {
+    console.error("Error fetching property by ID from Supabase:", error);
+    
+    // Fallback to mock data
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return properties.find(property => property.id === id);
+  }
 };
 
 // Add new property
 export const addProperty = async (property: Omit<Property, "id" | "createdAt" | "status">): Promise<Property> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  const newProperty: Property = {
-    ...property,
-    id: `prop${properties.length + 1}`,
-    status: "pending",
-    createdAt: new Date()
-  };
-  
-  properties.push(newProperty);
-  return newProperty;
+  try {
+    const propertyData = {
+      owner: property.owner.toLowerCase(),
+      title: property.title,
+      description: property.description,
+      location: property.location,
+      value: property.value,
+      image_url: property.imageUrl,
+      status: 'pending'
+    };
+    
+    const { data, error } = await supabase
+      .from('properties')
+      .insert(propertyData)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    return {
+      ...data,
+      imageUrl: data.image_url,
+      createdAt: new Date(data.created_at),
+      value: Number(data.value)
+    } as Property;
+  } catch (error) {
+    console.error("Error adding property to Supabase:", error);
+    
+    // Fallback to mock data
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const newProperty: Property = {
+      ...property,
+      id: `prop${properties.length + 1}`,
+      status: "pending",
+      createdAt: new Date()
+    };
+    
+    properties.push(newProperty);
+    return newProperty;
+  }
 };
 
 // Update property status
 export const updatePropertyStatus = async (id: string, status: Property["status"], tokenId?: string): Promise<Property> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  const propertyIndex = properties.findIndex(p => p.id === id);
-  if (propertyIndex === -1) {
-    throw new Error("Property not found");
+  try {
+    const updateData: any = { status };
+    if (tokenId) updateData.token_id = tokenId;
+    
+    const { data, error } = await supabase
+      .from('properties')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    return {
+      ...data,
+      imageUrl: data.image_url,
+      createdAt: new Date(data.created_at),
+      value: Number(data.value)
+    } as Property;
+  } catch (error) {
+    console.error("Error updating property status in Supabase:", error);
+    
+    // Fallback to mock data
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const propertyIndex = properties.findIndex(p => p.id === id);
+    if (propertyIndex === -1) {
+      throw new Error("Property not found");
+    }
+    
+    const updatedProperty = {
+      ...properties[propertyIndex],
+      status,
+      ...(tokenId ? { tokenId } : {})
+    };
+    
+    properties[propertyIndex] = updatedProperty;
+    return updatedProperty;
   }
-  
-  const updatedProperty = {
-    ...properties[propertyIndex],
-    status,
-    ...(tokenId ? { tokenId } : {})
-  };
-  
-  properties[propertyIndex] = updatedProperty;
-  return updatedProperty;
+};
+
+// Migrate mock data to Supabase (can be called on app initialization)
+export const migrateMockDataToSupabase = async () => {
+  try {
+    // Check if we already have properties in Supabase
+    const { count, error } = await supabase
+      .from('properties')
+      .select('*', { count: 'exact', head: true });
+    
+    if (error) throw error;
+    
+    // Only migrate if no properties exist yet
+    if (count === 0) {
+      const propertiesToInsert = mockProperties.map(prop => ({
+        id: prop.id,
+        owner: prop.owner.toLowerCase(),
+        title: prop.title,
+        description: prop.description,
+        location: prop.location,
+        value: prop.value,
+        image_url: prop.imageUrl,
+        status: prop.status,
+        token_id: prop.tokenId,
+        created_at: prop.createdAt.toISOString()
+      }));
+      
+      const { error: insertError } = await supabase
+        .from('properties')
+        .insert(propertiesToInsert);
+      
+      if (insertError) throw insertError;
+      console.log("Successfully migrated mock properties to Supabase");
+    }
+  } catch (error) {
+    console.error("Error migrating mock data to Supabase:", error);
+  }
 };
 
 // Reset to mock data (for testing)
 export const resetProperties = () => {
   properties = [...mockProperties];
 };
+
+// Call this function to migrate data on app initialization
+migrateMockDataToSupabase();

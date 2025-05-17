@@ -9,7 +9,127 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      loans: {
+        Row: {
+          amount: number
+          borrower: string
+          collateral_amount: number
+          id: string
+          interest_rate: number
+          loan_to_value: number
+          property_id: string
+          start_date: string
+          status: string
+          term: number
+          token_id: string | null
+        }
+        Insert: {
+          amount: number
+          borrower: string
+          collateral_amount: number
+          id?: string
+          interest_rate: number
+          loan_to_value: number
+          property_id: string
+          start_date?: string
+          status: string
+          term: number
+          token_id?: string | null
+        }
+        Update: {
+          amount?: number
+          borrower?: string
+          collateral_amount?: number
+          id?: string
+          interest_rate?: number
+          loan_to_value?: number
+          property_id?: string
+          start_date?: string
+          status?: string
+          term?: number
+          token_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loans_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      properties: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          image_url: string
+          location: string
+          owner: string
+          status: string
+          title: string
+          token_id: string | null
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          image_url: string
+          location: string
+          owner: string
+          status: string
+          title: string
+          token_id?: string | null
+          value: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          image_url?: string
+          location?: string
+          owner?: string
+          status?: string
+          title?: string
+          token_id?: string | null
+          value?: number
+        }
+        Relationships: []
+      }
+      repayment_schedule: {
+        Row: {
+          amount: number
+          date: string
+          id: string
+          loan_id: string
+          status: string
+        }
+        Insert: {
+          amount: number
+          date: string
+          id?: string
+          loan_id: string
+          status: string
+        }
+        Update: {
+          amount?: number
+          date?: string
+          id?: string
+          loan_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repayment_schedule_loan_id_fkey"
+            columns: ["loan_id"]
+            isOneToOne: false
+            referencedRelation: "loans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
