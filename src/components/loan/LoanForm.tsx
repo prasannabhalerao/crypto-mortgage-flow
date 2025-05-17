@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -30,6 +31,7 @@ import { createLoanRequest } from "@/services/loanService";
 import { getAvailablePropertyValue, getPropertyLoanedAmount } from "@/services/loanService";
 import { getUserProperties } from "@/services/propertyService";
 import { Property } from "@/types";
+import { useLoanValidation } from "@/hooks/useLoanValidation";
 
 const formSchema = z.object({
   propertyId: z.string().min(1, "Property is required"),
@@ -41,12 +43,10 @@ const formSchema = z.object({
 
 const LoanForm: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { account, simpleMintToken } = useWeb3();
   
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [availableValue, setAvailableValue] = useState<number>(0);
-  const [isCheckingValue, setIsCheckingValue] = useState<boolean>(false);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -58,11 +58,25 @@ const LoanForm: React.FC = () => {
       collateralAmount: 0.1,
     },
   });
+
+  // Get the current property ID from the form
+  const propertyId = form.watch("propertyId");
+  
+  // Use our custom hook for loan validation
+  const { 
+    availableValue, 
+    isLoading: isCheckingValue, 
+    maxLoanAmount,
+    canApplyForLoan
+  } = useLoanValidation(
+    propertyId,
+    selectedProperty?.value || 0
+  );
   
   const { data: properties, isLoading } = useQuery({
     queryKey: ["userProperties"],
-    queryFn: () => getUserProperties(user?.id || ""),
-    enabled: !!user?.id,
+    queryFn: () => getUserProperties(currentUser?.id || account || ""),
+    enabled: !!(currentUser?.id || account),
   });
   
   // Filter only tokenized properties
@@ -77,42 +91,15 @@ const LoanForm: React.FC = () => {
       const property = properties.find((p) => p.id === propertyId);
       setSelectedProperty(property || null);
       
-      // Check available value for this property
-      if (property) {
-        checkAvailableValue(property.id, property.value);
+      // Update form amount if current amount is too high
+      const currentAmount = form.getValues("amount");
+      if (property && currentAmount > availableValue) {
+        form.setValue("amount", availableValue);
       }
     } else {
       setSelectedProperty(null);
-      setAvailableValue(0);
     }
-  }, [form.watch("propertyId"), properties]);
-  
-  // Check available property value after existing loans
-  const checkAvailableValue = async (propertyId: string, propertyValue: number) => {
-    setIsCheckingValue(true);
-    try {
-      // Get available value from API
-      const availableVal = await getAvailablePropertyValue(propertyId, propertyValue);
-      
-      // Also check localStorage for additional loans not yet in the API
-      const localStorageAmount = getPropertyLoanedAmount(propertyId);
-      
-      // Calculate final available value
-      const finalAvailableValue = Math.max(availableVal - localStorageAmount, 0);
-      setAvailableValue(finalAvailableValue);
-      
-      // Update form amount if current amount is too high
-      const currentAmount = form.getValues("amount");
-      if (currentAmount > finalAvailableValue) {
-        form.setValue("amount", finalAvailableValue);
-      }
-    } catch (error) {
-      console.error("Error checking available property value:", error);
-      toast.error("Failed to check available property value");
-    } finally {
-      setIsCheckingValue(false);
-    }
-  };
+  }, [form.watch("propertyId"), properties, availableValue, form]);
   
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!account) {

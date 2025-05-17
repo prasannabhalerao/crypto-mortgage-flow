@@ -19,6 +19,14 @@ export const getPropertiesByOwner = async (ownerAddress: string): Promise<Proper
   return properties.filter(property => property.owner.toLowerCase() === ownerAddress.toLowerCase());
 };
 
+// Get user properties (by user ID)
+export const getUserProperties = async (userId: string): Promise<Property[]> => {
+  // For now, we'll use getPropertiesByOwner since we're using wallet addresses as IDs
+  // Simulate API call delay
+  await new Promise(resolve => setTimeout(resolve, 500));
+  return properties.filter(property => property.owner.toLowerCase() === userId.toLowerCase());
+};
+
 // Get properties by status (for admin dashboard)
 export const getPropertiesByStatus = async (status: Property["status"]): Promise<Property[]> => {
   // Simulate API call delay
